@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 use fixedbitset::FixedBitSet;
 
 const DISPLAY_WIDTH: usize = 128;
-const DISPLAY_HEIGHT: usize = 4;
+const DISPLAY_HEIGHT: usize = 64;
 
 #[wasm_bindgen]
 pub struct ChipVM {
@@ -42,6 +42,13 @@ impl ChipVM {
         self.io_flag = true;
     }
 
+    pub fn get_display_width(&self) -> usize {
+        DISPLAY_WIDTH
+    }
+
+    pub fn get_display_height(&self) -> usize {
+        DISPLAY_HEIGHT
+    }
 }
 
 #[cfg(test)]

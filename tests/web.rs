@@ -4,10 +4,14 @@
 
 extern crate wasm_bindgen_test;
 use wasm_bindgen_test::*;
+use chip8_wasm::new_vm;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[wasm_bindgen_test]
-fn pass() {
-    assert_eq!(1 + 1, 2);
+fn test_get_display_size() {
+    let vm = new_vm();
+
+    assert_eq!(128, vm.get_display_width());
+    assert_eq!(64, vm.get_display_height());
 }
