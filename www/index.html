@@ -1,11 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html xmlns="http://www.w3.org/1999/html">
   <head>
     <meta charset="utf-8">
-    <title>Hello wasm-pack!</title>
+    <title>Chip8 VM</title>
   </head>
   <body>
     <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+    <div id="display_container">
+      <canvas id="display"></canvas>
+    </div>
+    <div id="keyboard_container">
+      TODO: Keyboard goes here.
+    </div>
+    <style type="text/css">
+      #display {
+        background-color: black;
+        border-style: solid;
+        border-color: grey;
+        border-width: 1em;
+      }
+    </style>
     <script src="./bootstrap.js"></script>
   </body>
 </html>
