@@ -4,11 +4,22 @@ use fixedbitset::FixedBitSet;
 const DISPLAY_WIDTH: usize = 128;
 const DISPLAY_HEIGHT: usize = 64;
 
+const RAM_SIZE: usize = 4096;
+
+struct Registers {
+    v: [u8; 16],
+    i: u16,
+    pc: u16,
+    sp: u8,
+}
+
 #[wasm_bindgen]
 pub struct ChipVM {
     video_mem: FixedBitSet,
     io_reg: u8,
     io_flag: bool,
+    ram: [u8; 4096],
+    regs: Registers,
 }
 
 impl ChipVM {
@@ -17,6 +28,15 @@ impl ChipVM {
             video_mem: FixedBitSet::with_capacity(DISPLAY_HEIGHT * DISPLAY_WIDTH),
             io_reg: 0,
             io_flag: false,
+
+            ram: [0; RAM_SIZE],
+
+            regs: Registers {
+                v: [0; 16],
+                i: 0,
+                pc: 0,
+                sp: 0,
+            }
         }
     }
 
@@ -31,6 +51,9 @@ impl ChipVM {
     pub fn get_display_buffer(&self) -> FixedBitSet {
         self.video_mem.clone()
     }
+}
+
+impl ChipVM {
 }
 
 #[wasm_bindgen]
