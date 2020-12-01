@@ -27,6 +27,10 @@ impl ChipVM {
             None
         }
     }
+
+    pub fn get_display_buffer(&self) -> FixedBitSet {
+        self.video_mem.clone()
+    }
 }
 
 #[wasm_bindgen]
