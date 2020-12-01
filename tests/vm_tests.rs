@@ -13,3 +13,4 @@ fn test_read_unset_keypress_returns_none() {
     let mut vm = new_vm();
     assert!(vm.read_keypress().is_none());
 }
+
