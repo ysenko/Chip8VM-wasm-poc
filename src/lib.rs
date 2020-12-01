@@ -1,4 +1,4 @@
-mod chip_vm;
+pub mod chip_vm;
 mod utils;
 
 use wasm_bindgen::prelude::*;
