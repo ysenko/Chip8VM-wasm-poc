@@ -13,7 +13,7 @@ struct Registers {
     v: [u8; 16],
     i: u16,
     pc: u16,
-    sp: u8,
+    stack: Vec<u16>,
 }
 
 #[wasm_bindgen]
@@ -38,7 +38,7 @@ impl ChipVM {
                 v: [0; 16],
                 i: 0,
                 pc: 0,
-                sp: 0,
+                stack: vec![],
             }
         }
     }
@@ -56,9 +56,143 @@ impl ChipVM {
     }
 }
 
+type SkipPCIncr = bool;
+type ExecResult = Result<SkipPCIncr, ExecError>;
+
+#[derive(Debug, Eq, PartialEq)]
+enum ExecError {
+    NoAddr,
+    MissingInstructionData,
+    EmptyStack,
+    UnknownError,
+}
+
+impl ChipVM {
+    fn exec_sys(&mut self, _i: Instruction) -> ExecResult {
+        Ok(false)
+    }
+
+    fn exec_cls(&mut self, _i: Instruction) -> ExecResult {
+        self.video_mem.clear();
+        Ok(false)
+    }
+
+    fn exec_ret(&mut self, i: Instruction) -> ExecResult {
+        match self.regs.stack.pop() {
+            Some(addr) => {
+                self.regs.pc = addr;
+                Ok(true)
+            },
+            _ => Err(ExecError::EmptyStack)
+        }
+    }
+
+    fn exec_jp(&mut self, i: Instruction) -> ExecResult {
+        match i.addr {
+            Some(addr) => {
+                self.regs.pc = addr;
+                Ok(true)
+            },
+            _ => Err(ExecError::NoAddr)
+        }
+    }
+
+    fn exec_call(&mut self, i: Instruction) -> ExecResult {
+        match i.addr {
+            Some(addr) => {
+                self.regs.stack.push(self.regs.pc);
+                self.regs.pc = addr;
+                Ok(true)
+            },
+            _ => Err(ExecError::NoAddr)
+        }
+
+    }
+
+    fn exec_se(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() && i.byte.is_some() {
+            if self.regs.v[i.vx.unwrap() as usize] == i.byte.unwrap() {
+                self.increment_pc();
+                self.increment_pc();
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        } else if i.vx.is_some() && i.vy.is_some() {
+            if self.regs.v[i.vx.unwrap() as usize] == self.regs.v[i.vy.unwrap() as usize] {
+                self.increment_pc();
+                self.increment_pc();
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+
+    }
+
+    fn exec_sne(&mut self, i: Instruction) -> ExecResult {
+        match (i.vx, i.byte) {
+            (Some(vx), Some(byte)) => {
+                if self.regs.v[vx as usize] != byte {
+                    self.increment_pc();
+                    self.increment_pc();
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            },
+            _ => Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_ld(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() && i.byte.is_some() {
+            self.regs.v[i.vx.unwrap() as usize] = i.byte.unwrap();
+            Ok(false)
+        } else if i.vx.is_some() && i.vy.is_some() {
+            let vx = i.vx.unwrap();
+            let vy = i.vy.unwrap();
+            self.regs.v[vx as usize] = self.regs.v[vy as usize];
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_add(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() && i.byte.is_some() {
+            let vx = i.vx.unwrap();
+            let byte = i.byte.unwrap();
+            self.regs.v[vx as usize] += byte;
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+}
+
+
 impl ChipVM {
     fn increment_pc(&mut self) {
         self.regs.pc += 2;
+    }
+
+    fn exec_instruction(&mut self, ins: Instruction) -> ExecResult {
+        match ins.i_type {
+            I::SYS => self.exec_sys(ins),
+            I::CLS => self.exec_cls(ins),
+            I::RET => self.exec_ret(ins),
+            I::JP => self.exec_jp(ins),
+            I::CALL => self.exec_call(ins),
+            I::SE => self.exec_se(ins),
+            I::SNE => self.exec_sne(ins),
+            I::LD => self.exec_ld(ins),
+            I::ADD => self.exec_add(ins),
+
+            _ => Err(ExecError::UnknownError)
+        }
     }
 }
 
@@ -184,7 +318,376 @@ impl Instruction {
                 ins.byte = Some(byte_from_k(k1, k2));
                 Ok(ins)
             },
+            (5, vx, vy, 0) => {
+                let mut ins = Instruction::with_defaults(I::SE);
+                ins.vx = Some(vx);
+                ins.vy = Some(vy);
+                Ok(ins)
+            },
+            (6, vx, k1, k2) => {
+                let mut ins = Instruction::with_defaults(I::LD);
+                ins.vx = Some(vx);
+                ins.byte = Some(byte_from_k(k1, k2));
+                Ok(ins)
+            },
+            (7, vx, k1, k2) => {
+                let mut ins = Instruction::with_defaults(I::ADD);
+                ins.vx = Some(vx);
+                ins.byte = Some(byte_from_k(k1, k2));
+                Ok(ins)
+            },
+            (8, vx, vy, 0) => {
+                let mut ins = Instruction::with_defaults(I::LD);
+                ins.vx = Some(vx);
+                ins.vy = Some(vy);
+                Ok(ins)
+            },
+
             _ => Err("Unknown instruction".to_string())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_skip_pc_incr(res: ExecResult) {
+        assert!(res.unwrap())
+    }
+
+    fn assert_no_skip_pc_increment(res: ExecResult) {
+        assert!(!res.unwrap())
+    }
+
+    #[test]
+    fn test_exec_instruction_sys() {
+        let mut vm = ChipVM::new_vm();
+        let mut i = Instruction::with_defaults(I::SYS);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+    }
+
+    #[test]
+    fn test_exec_instruction_cls() {
+        let mut vm = ChipVM::new_vm();
+
+        vm.video_mem.set_range(128..256, true);
+        // Sanity check.
+        assert_eq!(
+            vm.video_mem.ones().collect::<Vec<usize>>(),
+            (128..256).into_iter().collect::<Vec<usize>>()
+        );
+
+        let mut i = Instruction::with_defaults(I::CLS);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(vm.video_mem.ones().collect::<Vec<usize>>(), vec![]);
+    }
+
+    #[test]
+    fn test_exec_instruction_ret_error_on_empty_stack() {
+        let mut vm = ChipVM::new_vm();
+        let mut i = Instruction::with_defaults(I::RET);
+
+        // Stack is empty. This should return an error.
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err(), ExecError::EmptyStack);
+    }
+
+    #[test]
+    fn test_exec_instruction_ret() {
+        let mut vm = ChipVM::new_vm();
+        let ret_addr = 0x1234;
+        vm.regs.stack.push(ret_addr);
+
+        let mut i = Instruction::with_defaults(I::RET);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(ret_addr, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_jp() {
+        let mut vm = ChipVM::new_vm();
+        let jp_addr = 0x1234;
+
+        let mut i = Instruction::with_defaults(I::JP);
+        i.addr = Some(jp_addr);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(jp_addr, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_call() {
+        let mut vm = ChipVM::new_vm();
+        let call_addr = 0x1234;
+        let prev_pc = vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::CALL);
+        i.addr = Some(call_addr);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(call_addr, vm.regs.pc);
+        assert_eq!(Some(prev_pc), vm.regs.stack.pop());
+    }
+
+    #[test]
+    fn test_exec_instruction_call_error_on_no_addr() {
+        let mut vm = ChipVM::new_vm();
+        let mut i = Instruction::with_defaults(I::CALL);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_err());
+        assert_eq!(ExecError::NoAddr, res.unwrap_err());
+    }
+
+    #[test]
+    fn test_exec_instruction_SEVxByte_skip() {
+        let vx = 2;
+        let vx_val = 42;
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx] = vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::SE);
+        i.vx = Some(vx as u8);
+        i.byte = Some(vx_val);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(prev_pc + 4, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_SEVxByte_no_skip() {
+        let vx = 2;
+        let vx_val = 42;
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx] = 1;
+        let prev_pc = vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::SE);
+        i.vx = Some(vx as u8);
+        i.byte = Some(vx_val);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_SE_error_on_missing_data() {
+        let mut vm = ChipVM::new_vm();
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SE);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_err());
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_SNEVxByte_skip() {
+        let vx = 2;
+        let vx_val = 42;
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx] = vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::SNE);
+        i.vx = Some(vx as u8);
+        i.byte = Some(0x1);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(prev_pc + 4, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_SNEVxByte_no_skip() {
+        let vx = 2;
+        let vx_val = 42;
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx] = vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::SNE);
+        i.vx = Some(vx as u8);
+        i.byte = Some(vx_val);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_SNEVxByte_error_on_missing_data() {
+        let mut vm = ChipVM::new_vm();
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SNE);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_err());
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_SEVxVy_skip() {
+        let vx = 2;
+        let vy = 3;
+        let some_val = 42;
+
+        let mut vm = ChipVM::new_vm();
+
+        vm.regs.v[vx] = some_val;
+        vm.regs.v[vy] = some_val;
+
+        let prev_pc= vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::SE);
+        i.vx = Some(vx as u8);
+        i.vy = Some(vy as u8);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(prev_pc + 4, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_SEVxVy_no_skip() {
+        let vx = 2;
+        let vy = 3;
+        let vx_val = 42;
+        let vy_val = 10;
+
+        let mut vm = ChipVM::new_vm();
+
+        vm.regs.v[vx] = vx_val;
+        vm.regs.v[vy] = vy_val;
+
+        let prev_pc = vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::SE);
+        i.vx = Some(vx as u8);
+        i.vy = Some(vy as u8);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_LDVxByte() {
+        let vx = 2;
+        let byte = 0x10;
+
+        let mut vm = ChipVM::new_vm();
+        let prev_pc = vm.regs.pc;
+        let mut i = Instruction::with_defaults(I::LD);
+        i.vx = Some(vx);
+        i.byte = Some(byte);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(vm.regs.v[vx as usize], byte);
+    }
+
+    #[test]
+    fn test_exec_instruction_LDVxByte_error_onm_missing_data() {
+        let mut vm = ChipVM::new_vm();
+        let mut i = Instruction::with_defaults(I::LD);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err(), ExecError::MissingInstructionData);
+    }
+
+    #[test]
+    fn exec_instruction_add_Vx_byte() {
+        let vx: u8 = 2;
+        let initial_vx_val = 0x2;
+        let value_to_add = 0x2;
+        let mut vm = ChipVM::new_vm();
+        let mut i = Instruction::with_defaults(I::ADD);
+        let prev_pc = vm.regs.pc;
+        vm.regs.v[vx as usize] = initial_vx_val;
+
+        i.vx = Some(vx);
+        i.byte = Some(value_to_add);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(initial_vx_val + value_to_add, vm.regs.v[vx as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_ld_vx_vy() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0x2;
+        let initial_vy_val = 0x3;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let mut i = Instruction::with_defaults(I::LD);
+        i.vx = Some(vx);
+        i.vy = Some(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(initial_vy_val, vm.regs.v[vx as usize]);
+        assert_eq!(vm.regs.v[vx as usize], vm.regs.v[vy as usize]);
     }
 }
