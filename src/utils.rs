@@ -1,4 +1,10 @@
-use js_sys::Math;
+#[cfg(not(test))]
+use js_sys::Math::random;
+
+#[cfg(test)]
+fn random() -> f64 {
+    0.000066
+}
 
 pub fn set_panic_hook() {
     // When the `console_error_panic_hook` feature is enabled, we can call the
@@ -11,12 +17,6 @@ pub fn set_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
-#[cfg(test)]
 pub fn generate_random_u8() -> u8 {
-    0x42
-}
-
-#[cfg(not(test))]
-pub fn generate_random_u8() -> u8 {
-    (((Math::random() * 1000000.0) as u32) % 255) as u8
+    (((random() * 1000000.0) as u32) % 255) as u8
 }
