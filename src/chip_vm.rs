@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::*;
 use fixedbitset::FixedBitSet;
+use wasm_bindgen::prelude::*;
 
 const DISPLAY_WIDTH: usize = 128;
 const DISPLAY_HEIGHT: usize = 64;
@@ -39,7 +39,7 @@ impl ChipVM {
                 i: 0,
                 pc: 0,
                 stack: vec![],
-            }
+            },
         }
     }
 
@@ -82,8 +82,8 @@ impl ChipVM {
             Some(addr) => {
                 self.regs.pc = addr;
                 Ok(true)
-            },
-            _ => Err(ExecError::EmptyStack)
+            }
+            _ => Err(ExecError::EmptyStack),
         }
     }
 
@@ -92,8 +92,8 @@ impl ChipVM {
             Some(addr) => {
                 self.regs.pc = addr;
                 Ok(true)
-            },
-            _ => Err(ExecError::NoAddr)
+            }
+            _ => Err(ExecError::NoAddr),
         }
     }
 
@@ -103,10 +103,9 @@ impl ChipVM {
                 self.regs.stack.push(self.regs.pc);
                 self.regs.pc = addr;
                 Ok(true)
-            },
-            _ => Err(ExecError::NoAddr)
+            }
+            _ => Err(ExecError::NoAddr),
         }
-
     }
 
     fn exec_se(&mut self, i: Instruction) -> ExecResult {
@@ -129,7 +128,6 @@ impl ChipVM {
         } else {
             Err(ExecError::MissingInstructionData)
         }
-
     }
 
     fn exec_sne(&mut self, i: Instruction) -> ExecResult {
@@ -142,8 +140,8 @@ impl ChipVM {
                 } else {
                     Ok(false)
                 }
-            },
-            _ => Err(ExecError::MissingInstructionData)
+            }
+            _ => Err(ExecError::MissingInstructionData),
         }
     }
 
@@ -173,7 +171,6 @@ impl ChipVM {
     }
 }
 
-
 impl ChipVM {
     fn increment_pc(&mut self) {
         self.regs.pc += 2;
@@ -191,7 +188,7 @@ impl ChipVM {
             I::LD => self.exec_ld(ins),
             I::ADD => self.exec_add(ins),
 
-            _ => Err(ExecError::UnknownError)
+            _ => Err(ExecError::UnknownError),
         }
     }
 }
@@ -204,7 +201,6 @@ impl ChipVM {
         // if !jmp_flag {
         //     self.increment_pc();
         // }
-
     }
 
     pub fn video_port(&self) -> *const u32 {
@@ -250,9 +246,7 @@ pub enum I {
 }
 
 fn addr_from_n(n1: u8, n2: u8, n3: u8) -> u16 {
-    ((n1 as u16) << 8) +
-        ((n2 as u16) << 4) +
-        (n3 as u16)
+    ((n1 as u16) << 8) + ((n2 as u16) << 4) + (n3 as u16)
 }
 
 fn byte_from_k(k1: u8, k2: u8) -> u8 {
@@ -287,63 +281,57 @@ impl Instruction {
         let b2_lsb = b2 & LSB_MASK;
 
         match (b1_msb, b1_lsb, b2_msb, b2_lsb) {
-            (0, b2_lsb, _, _) if b2_lsb != 0 => {
-                Ok(Instruction::with_defaults(I::SYS))
-            },
-            (0, 0, 0xE, 0) => {
-                Ok(Instruction::with_defaults(I::CLS))
-            },
-            (0, 0, 0xE, 0xE) => {
-                Ok(Instruction::with_defaults(I::RET))
-            }
+            (0, b2_lsb, _, _) if b2_lsb != 0 => Ok(Instruction::with_defaults(I::SYS)),
+            (0, 0, 0xE, 0) => Ok(Instruction::with_defaults(I::CLS)),
+            (0, 0, 0xE, 0xE) => Ok(Instruction::with_defaults(I::RET)),
             (1, n1, n2, n3) => {
                 let mut ins = Instruction::with_defaults(I::JP);
                 ins.addr = Some(addr_from_n(n1, n2, n3));
                 Ok(ins)
-            },
+            }
             (2, n1, n2, n3) => {
                 let mut ins = Instruction::with_defaults(I::CALL);
                 ins.addr = Some(addr_from_n(n1, n2, n3));
                 Ok(ins)
-            },
+            }
             (3, vx, k1, k2) => {
                 let mut ins = Instruction::with_defaults(I::SE);
                 ins.vx = Some(vx);
                 ins.byte = Some(byte_from_k(k1, k2));
                 Ok(ins)
-            },
+            }
             (4, vx, k1, k2) => {
                 let mut ins = Instruction::with_defaults(I::SNE);
                 ins.vx = Some(vx);
                 ins.byte = Some(byte_from_k(k1, k2));
                 Ok(ins)
-            },
+            }
             (5, vx, vy, 0) => {
                 let mut ins = Instruction::with_defaults(I::SE);
                 ins.vx = Some(vx);
                 ins.vy = Some(vy);
                 Ok(ins)
-            },
+            }
             (6, vx, k1, k2) => {
                 let mut ins = Instruction::with_defaults(I::LD);
                 ins.vx = Some(vx);
                 ins.byte = Some(byte_from_k(k1, k2));
                 Ok(ins)
-            },
+            }
             (7, vx, k1, k2) => {
                 let mut ins = Instruction::with_defaults(I::ADD);
                 ins.vx = Some(vx);
                 ins.byte = Some(byte_from_k(k1, k2));
                 Ok(ins)
-            },
+            }
             (8, vx, vy, 0) => {
                 let mut ins = Instruction::with_defaults(I::LD);
                 ins.vx = Some(vx);
                 ins.vy = Some(vy);
                 Ok(ins)
-            },
+            }
 
-            _ => Err("Unknown instruction".to_string())
+            _ => Err("Unknown instruction".to_string()),
         }
     }
 }
@@ -574,7 +562,7 @@ mod tests {
         vm.regs.v[vx] = some_val;
         vm.regs.v[vy] = some_val;
 
-        let prev_pc= vm.regs.pc;
+        let prev_pc = vm.regs.pc;
 
         let mut i = Instruction::with_defaults(I::SE);
         i.vx = Some(vx as u8);

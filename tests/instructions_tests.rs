@@ -136,7 +136,8 @@ fn test_parse_SE_vx_vy() {
 }
 
 #[test]
-fn test_parse_LD_vx_byte() { let (b1, b2) = get_ins_bytes(0x62AB);
+fn test_parse_LD_vx_byte() {
+    let (b1, b2) = get_ins_bytes(0x62AB);
 
     let i = Instruction::from_bytes(b1, b2);
 
@@ -171,7 +172,8 @@ fn test_parse_ADD_vx_byte() {
 }
 
 #[test]
-fn test_parse_LD_vx_vy() { let (b1, b2) = get_ins_bytes(0x8230);
+fn test_parse_LD_vx_vy() {
+    let (b1, b2) = get_ins_bytes(0x8230);
 
     let i = Instruction::from_bytes(b1, b2);
 
