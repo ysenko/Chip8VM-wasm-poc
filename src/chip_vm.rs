@@ -77,7 +77,7 @@ impl ChipVM {
         Ok(false)
     }
 
-    fn exec_ret(&mut self, i: Instruction) -> ExecResult {
+    fn exec_ret(&mut self, _i: Instruction) -> ExecResult {
         match self.regs.stack.pop() {
             Some(addr) => {
                 self.regs.pc = addr;
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_exec_instruction_sys() {
         let mut vm = ChipVM::new_vm();
-        let mut i = Instruction::with_defaults(I::SYS);
+        let i = Instruction::with_defaults(I::SYS);
 
         let res = vm.exec_instruction(i);
 
@@ -382,7 +382,7 @@ mod tests {
             (128..256).into_iter().collect::<Vec<usize>>()
         );
 
-        let mut i = Instruction::with_defaults(I::CLS);
+        let i = Instruction::with_defaults(I::CLS);
 
         let res = vm.exec_instruction(i);
 
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn test_exec_instruction_ret_error_on_empty_stack() {
         let mut vm = ChipVM::new_vm();
-        let mut i = Instruction::with_defaults(I::RET);
+        let i = Instruction::with_defaults(I::RET);
 
         // Stack is empty. This should return an error.
         let res = vm.exec_instruction(i);
@@ -409,7 +409,7 @@ mod tests {
         let ret_addr = 0x1234;
         vm.regs.stack.push(ret_addr);
 
-        let mut i = Instruction::with_defaults(I::RET);
+        let i = Instruction::with_defaults(I::RET);
 
         let res = vm.exec_instruction(i);
 
@@ -453,7 +453,7 @@ mod tests {
     #[test]
     fn test_exec_instruction_call_error_on_no_addr() {
         let mut vm = ChipVM::new_vm();
-        let mut i = Instruction::with_defaults(I::CALL);
+        let i = Instruction::with_defaults(I::CALL);
 
         let res = vm.exec_instruction(i);
 
@@ -462,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SEVxByte_skip() {
+    fn test_exec_instruction_sevx_byte_skip() {
         let vx = 2;
         let vx_val = 42;
         let mut vm = ChipVM::new_vm();
@@ -481,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SEVxByte_no_skip() {
+    fn test_exec_instruction_sevx_byte_no_skip() {
         let vx = 2;
         let vx_val = 42;
         let mut vm = ChipVM::new_vm();
@@ -500,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SE_error_on_missing_data() {
+    fn test_exec_instruction_se_error_on_missing_data() {
         let mut vm = ChipVM::new_vm();
         let prev_pc = vm.regs.pc;
 
@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SNEVxByte_skip() {
+    fn test_exec_instruction_snevx_byte_skip() {
         let vx = 2;
         let vx_val = 42;
         let mut vm = ChipVM::new_vm();
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SNEVxByte_no_skip() {
+    fn test_exec_instruction_snevx_byte_no_skip() {
         let vx = 2;
         let vx_val = 42;
         let mut vm = ChipVM::new_vm();
@@ -551,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SNEVxByte_error_on_missing_data() {
+    fn test_exec_instruction_snevx_byte_error_on_missing_data() {
         let mut vm = ChipVM::new_vm();
         let prev_pc = vm.regs.pc;
 
@@ -564,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SEVxVy_skip() {
+    fn test_exec_instruction_sevx_vy_skip() {
         let vx = 2;
         let vy = 3;
         let some_val = 42;
@@ -588,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_SEVxVy_no_skip() {
+    fn test_exec_instruction_sevx_vy_no_skip() {
         let vx = 2;
         let vy = 3;
         let vx_val = 42;
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_LDVxByte() {
+    fn test_exec_instruction_ldvx_byte() {
         let vx = 2;
         let byte = 0x10;
 
@@ -633,9 +633,9 @@ mod tests {
     }
 
     #[test]
-    fn test_exec_instruction_LDVxByte_error_onm_missing_data() {
+    fn test_exec_instruction_ldvx_byte_error_onm_missing_data() {
         let mut vm = ChipVM::new_vm();
-        let mut i = Instruction::with_defaults(I::LD);
+        let i = Instruction::with_defaults(I::LD);
 
         let res = vm.exec_instruction(i);
 
@@ -644,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_instruction_add_Vx_byte() {
+    fn exec_instruction_add_vx_byte() {
         let vx: u8 = 2;
         let initial_vx_val = 0x2;
         let value_to_add = 0x2;
