@@ -1,3 +1,5 @@
+use js_sys::Math;
+
 pub fn set_panic_hook() {
     // When the `console_error_panic_hook` feature is enabled, we can call the
     // `set_panic_hook` function at least once during initialization, and then
@@ -7,4 +9,14 @@ pub fn set_panic_hook() {
     // https://github.com/rustwasm/console_error_panic_hook#readme
     #[cfg(feature = "console_error_panic_hook")]
     console_error_panic_hook::set_once();
+}
+
+#[cfg(test)]
+pub fn generate_random_u8() -> u8 {
+    0x42
+}
+
+#[cfg(not(test))]
+pub fn generate_random_u8() -> u8 {
+    (((Math::random() * 1000000.0) as u32) % 255) as u8
 }
