@@ -165,9 +165,50 @@ impl ChipVM {
             let byte = i.byte.unwrap();
             self.regs.v[vx as usize] += byte;
             Ok(false)
+        } else if i.vx.is_some() & i.vy.is_some() {
+            let vx = i.vx.unwrap();
+            let vy = i.vy.unwrap();
+            let (res, carry) = self.regs.v[vx as usize]
+                .overflowing_add(self.regs.v[vy as usize]);
+            self.regs.v[vx as usize] = res;
+            self.regs.v[0xF] = if carry { 1 } else { 0 };
+            Ok(false)
         } else {
             Err(ExecError::MissingInstructionData)
         }
+    }
+
+    fn exec_or(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() && i.vy.is_some() {
+            let vx = i.vx.unwrap();
+            let vy = i.vy.unwrap();
+            self.regs.v[vx as usize] |= self.regs.v[vy as usize];
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_and(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() & i.vy.is_some() {
+            let vx = i.vx.unwrap();
+            let vy = i.vy.unwrap();
+            self.regs.v[vx as usize] &= self.regs.v[vy as usize];
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_xor(&mut self, i: Instruction) -> ExecResult {
+       if i.vx.is_some() & i.vy.is_some() {
+           let vx = i.vx.unwrap();
+           let vy = i.vy.unwrap();
+           self.regs.v[vx as usize] ^= self.regs.v[vy as usize];
+           Ok(false)
+       } else {
+           Err(ExecError::MissingInstructionData)
+       }
     }
 }
 
@@ -187,6 +228,9 @@ impl ChipVM {
             I::SNE => self.exec_sne(ins),
             I::LD => self.exec_ld(ins),
             I::ADD => self.exec_add(ins),
+            I::OR => self.exec_or(ins),
+            I::AND => self.exec_and(ins),
+            I::XOR => self.exec_xor(ins),
 
             _ => Err(ExecError::UnknownError),
         }
@@ -274,6 +318,26 @@ impl Instruction {
         }
     }
 
+    pub fn set_byte(mut self, byte: u8) -> Self {
+        self.byte = Some(byte);
+        self
+    }
+
+    pub fn set_addr(mut self, addr: u16) -> Self {
+        self.addr = Some(addr);
+        self
+    }
+
+    pub fn set_vx(mut self, vx: u8) -> Self {
+        self.vx = Some(vx);
+        self
+    }
+
+    pub fn set_vy(mut self, vy: u8) -> Self {
+        self.vy = Some(vy);
+        self
+    }
+
     pub fn from_bytes(b1: u8, b2: u8) -> Result<Instruction, String> {
         let b1_msb = (b1 & MSB_MASK) >> 4;
         let b1_lsb = b1 & LSB_MASK;
@@ -285,51 +349,29 @@ impl Instruction {
             (0, 0, 0xE, 0) => Ok(Instruction::with_defaults(I::CLS)),
             (0, 0, 0xE, 0xE) => Ok(Instruction::with_defaults(I::RET)),
             (1, n1, n2, n3) => {
-                let mut ins = Instruction::with_defaults(I::JP);
-                ins.addr = Some(addr_from_n(n1, n2, n3));
-                Ok(ins)
+                Ok(Instruction::with_defaults(I::JP).set_addr(addr_from_n(n1, n2, n3)))
             }
             (2, n1, n2, n3) => {
-                let mut ins = Instruction::with_defaults(I::CALL);
-                ins.addr = Some(addr_from_n(n1, n2, n3));
-                Ok(ins)
+                Ok(Instruction::with_defaults(I::CALL).set_addr(addr_from_n(n1, n2, n3)))
             }
-            (3, vx, k1, k2) => {
-                let mut ins = Instruction::with_defaults(I::SE);
-                ins.vx = Some(vx);
-                ins.byte = Some(byte_from_k(k1, k2));
-                Ok(ins)
-            }
-            (4, vx, k1, k2) => {
-                let mut ins = Instruction::with_defaults(I::SNE);
-                ins.vx = Some(vx);
-                ins.byte = Some(byte_from_k(k1, k2));
-                Ok(ins)
-            }
-            (5, vx, vy, 0) => {
-                let mut ins = Instruction::with_defaults(I::SE);
-                ins.vx = Some(vx);
-                ins.vy = Some(vy);
-                Ok(ins)
-            }
-            (6, vx, k1, k2) => {
-                let mut ins = Instruction::with_defaults(I::LD);
-                ins.vx = Some(vx);
-                ins.byte = Some(byte_from_k(k1, k2));
-                Ok(ins)
-            }
-            (7, vx, k1, k2) => {
-                let mut ins = Instruction::with_defaults(I::ADD);
-                ins.vx = Some(vx);
-                ins.byte = Some(byte_from_k(k1, k2));
-                Ok(ins)
-            }
-            (8, vx, vy, 0) => {
-                let mut ins = Instruction::with_defaults(I::LD);
-                ins.vx = Some(vx);
-                ins.vy = Some(vy);
-                Ok(ins)
-            }
+            (3, vx, k1, k2) => Ok(Instruction::with_defaults(I::SE)
+                .set_vx(vx)
+                .set_byte(byte_from_k(k1, k2))),
+            (4, vx, k1, k2) => Ok(Instruction::with_defaults(I::SNE)
+                .set_vx(vx)
+                .set_byte(byte_from_k(k1, k2))),
+            (5, vx, vy, 0) => Ok(Instruction::with_defaults(I::SE).set_vx(vx).set_vy(vy)),
+            (6, vx, k1, k2) => Ok(Instruction::with_defaults(I::LD)
+                .set_vx(vx)
+                .set_byte(byte_from_k(k1, k2))),
+            (7, vx, k1, k2) => Ok(Instruction::with_defaults(I::ADD)
+                .set_vx(vx)
+                .set_byte(byte_from_k(k1, k2))),
+            (8, vx, vy, 0) => Ok(Instruction::with_defaults(I::LD).set_vx(vx).set_vy(vy)),
+            (8, vx, vy, 1) => Ok(Instruction::with_defaults(I::OR).set_vx(vx).set_vy(vy)),
+            (8, vx, vy, 2) => Ok(Instruction::with_defaults(I::AND).set_vx(vx).set_vy(vy)),
+            (8, vx, vy, 3) => Ok(Instruction::with_defaults(I::XOR).set_vx(vx).set_vy(vy)),
+            (8, vx, vy, 4) => Ok(Instruction::with_defaults(I::ADD).set_vx(vx).set_vy(vy)),
 
             _ => Err("Unknown instruction".to_string()),
         }
@@ -346,6 +388,14 @@ mod tests {
 
     fn assert_no_skip_pc_increment(res: ExecResult) {
         assert!(!res.unwrap())
+    }
+
+    fn assert_carry(vm: &ChipVM) {
+        assert_eq!(1, vm.regs.v[0xF]);
+    }
+
+    fn assert_no_carry(vm: &ChipVM) {
+        assert_eq!(0, vm.regs.v[0xF]);
     }
 
     #[test]
@@ -677,5 +727,139 @@ mod tests {
 
         assert_eq!(initial_vy_val, vm.regs.v[vx as usize]);
         assert_eq!(vm.regs.v[vx as usize], vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_or_vx_vy() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0xAA;
+        let initial_vy_val = 0x55;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::OR)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(initial_vy_val | initial_vx_val, vm.regs.v[vx as usize]);
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_and_vx_vy() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0xEE;
+        let initial_vy_val = 0x33;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::AND)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(initial_vy_val & initial_vx_val, vm.regs.v[vx as usize]);
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_xor_vx_vy() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0xDD;
+        let initial_vy_val = 0xDD;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::XOR)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(initial_vy_val ^ initial_vx_val, vm.regs.v[vx as usize]);
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_add_vx_vy_with_carry() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0xDD;
+        let initial_vy_val = 0xDD;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::ADD)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        let (res, carry) = initial_vx_val.overflowing_add(initial_vy_val);
+        assert_eq!(res, vm.regs.v[vx as usize]);
+        if carry { assert_carry(&vm) } else { assert_no_carry(&vm) };
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_add_vx_vy_no_carry() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0x2;
+        let initial_vy_val = 0x3;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::ADD)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        let (res, carry) = initial_vx_val.overflowing_add(initial_vy_val);
+        assert_eq!(res, vm.regs.v[vx as usize]);
+        if carry { assert_carry(&vm) } else { assert_no_carry(&vm) };
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
     }
 }
