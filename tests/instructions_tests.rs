@@ -260,3 +260,75 @@ fn test_parse_add_vx_vy() {
     assert_eq!(i_data.vx, Some(0x2));
     assert_eq!(i_data.vy, Some(0x3));
 }
+
+#[test]
+fn test_parse_sub_vx_vy() {
+    let (b1, b2) = get_ins_bytes(0x8235);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::SUB);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert_eq!(i_data.vy, Some(0x3));
+}
+
+#[test]
+fn test_parse_shr_vx_vy() {
+    let (b1, b2) = get_ins_bytes(0x8236);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::SHR);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_subn_vx_vy() {
+    let (b1, b2) = get_ins_bytes(0x8237);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::SUBN);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert_eq!(i_data.vy, Some(0x3));
+}
+
+#[test]
+fn test_parse_shl_vx_vy() {
+    let (b1, b2) = get_ins_bytes(0x823E);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::SHL);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}

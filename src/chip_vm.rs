@@ -210,6 +210,60 @@ impl ChipVM {
            Err(ExecError::MissingInstructionData)
        }
     }
+
+    fn exec_sub(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() & i.vy.is_some() {
+            let vx = i.vx.unwrap();
+            let vy = i.vy.unwrap();
+            let vx_val = self.regs.v[vx as usize];
+            let vy_val = self.regs.v[vy as usize];
+            let (res, _) = vx_val.overflowing_sub(vy_val);
+            self.regs.v[0xF] = if vx_val >= vy_val { 1 } else { 0 };
+            self.regs.v[vx as usize] = res;
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_shr(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() {
+            let vx = i.vx.unwrap();
+            let vx_val = self.regs.v[vx as usize];
+            self.regs.v[vx as usize] = vx_val >> 1;
+            self.regs.v[0xF] = if vx_val.trailing_ones() > 0 { 1 } else { 0 };
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_subn(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() & i.vy.is_some() {
+            let vx = i.vx.unwrap();
+            let vy = i.vy.unwrap();
+            let vx_val = self.regs.v[vx as usize];
+            let vy_val = self.regs.v[vy as usize];
+            let (res, _) = vy_val.overflowing_sub(vx_val);
+            self.regs.v[0xF] = if vy_val >= vx_val { 1 } else { 0 };
+            self.regs.v[vx as usize] = res;
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_shl(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_some() {
+            let vx = i.vx.unwrap();
+            let vx_val = self.regs.v[vx as usize];
+            self.regs.v[vx as usize] = vx_val << 1;
+            self.regs.v[0xF] = if vx_val.leading_ones() > 0 { 1 } else { 0 };
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
 }
 
 impl ChipVM {
@@ -231,6 +285,10 @@ impl ChipVM {
             I::OR => self.exec_or(ins),
             I::AND => self.exec_and(ins),
             I::XOR => self.exec_xor(ins),
+            I::SUB => self.exec_sub(ins),
+            I::SHR => self.exec_shr(ins),
+            I::SUBN => self.exec_subn(ins),
+            I::SHL => self.exec_shl(ins),
 
             _ => Err(ExecError::UnknownError),
         }
@@ -372,6 +430,10 @@ impl Instruction {
             (8, vx, vy, 2) => Ok(Instruction::with_defaults(I::AND).set_vx(vx).set_vy(vy)),
             (8, vx, vy, 3) => Ok(Instruction::with_defaults(I::XOR).set_vx(vx).set_vy(vy)),
             (8, vx, vy, 4) => Ok(Instruction::with_defaults(I::ADD).set_vx(vx).set_vy(vy)),
+            (8, vx, vy, 5) => Ok(Instruction::with_defaults(I::SUB).set_vx(vx).set_vy(vy)),
+            (8, vx, _, 6) => Ok(Instruction::with_defaults(I::SHR).set_vx(vx)),
+            (8, vx, vy, 7) => Ok(Instruction::with_defaults(I::SUBN).set_vx(vx).set_vy(vy)),
+            (8, vx, _, E) => Ok(Instruction::with_defaults(I::SHL).set_vx(vx)),
 
             _ => Err("Unknown instruction".to_string()),
         }
@@ -861,5 +923,201 @@ mod tests {
         assert_eq!(res, vm.regs.v[vx as usize]);
         if carry { assert_carry(&vm) } else { assert_no_carry(&vm) };
         assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_sub_vx_vy_no_borrow() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0xA;
+        let initial_vy_val = 0x5;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SUB)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0x5, vm.regs.v[vx as usize]);
+        assert_carry(&vm);
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_sub_vx_vy_with_borrow() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0x2;
+        let initial_vy_val = 0x3;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SUB)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0xFF, vm.regs.v[vx as usize]);
+        assert_no_carry(&vm) ;
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_shr_vx_vy_with_carry() {
+        let vx: u8 = 2;
+        let initial_vx_val = 0x9;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SHR)
+            .set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0x4, vm.regs.v[vx as usize]);
+        assert_carry(&vm) ;
+    }
+
+    #[test]
+    fn exec_instruction_shr_vx_vy_no_carry() {
+        let vx: u8 = 2;
+        let initial_vx_val = 0x8;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SHR)
+            .set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0x4, vm.regs.v[vx as usize]);
+        assert_no_carry(&vm) ;
+    }
+
+    #[test]
+    fn exec_instruction_subn_vx_vy_no_borrow() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0x5;
+        let initial_vy_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SUBN)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0x5, vm.regs.v[vx as usize]);
+        assert_carry(&vm);
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_subn_vx_vy_with_borrow() {
+        let vx: u8 = 2;
+        let vy: u8 = 3;
+        let initial_vx_val = 0x3;
+        let initial_vy_val = 0x2;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        vm.regs.v[vy as usize] = initial_vy_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SUBN)
+            .set_vx(vx)
+            .set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0xFF, vm.regs.v[vx as usize]);
+        assert_no_carry(&vm) ;
+        assert_eq!(initial_vy_val, vm.regs.v[vy as usize]);
+    }
+
+    #[test]
+    fn exec_instruction_shl_vx_vy_with_carry() {
+        let vx: u8 = 2;
+        let initial_vx_val = 0x81;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SHL)
+            .set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0x2, vm.regs.v[vx as usize]);
+        assert_carry(&vm) ;
+    }
+
+    #[test]
+    fn exec_instruction_shl_vx_vy_no_carry() {
+        let vx: u8 = 2;
+        let initial_vx_val = 0x1;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = initial_vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SHL)
+            .set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+
+        assert_eq!(0x2, vm.regs.v[vx as usize]);
+        assert_no_carry(&vm) ;
     }
 }
