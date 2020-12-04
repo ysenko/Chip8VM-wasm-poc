@@ -1,4 +1,3 @@
-use chip8_wasm::chip_vm;
 use chip8_wasm::chip_vm::{Instruction, I};
 
 fn get_ins_bytes(ins_code: u16) -> (u8, u8) {
@@ -403,4 +402,22 @@ fn test_parse_rnd_vx_byte() {
     assert!(i_data.nibble.is_none());
     assert_eq!(i_data.vx, Some(0x2));
     assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_drw_vx_vy_nibble() {
+    let (b1, b2) = get_ins_bytes(0xD235);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::DRW);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert_eq!(i_data.nibble, Some(0x5));
+    assert_eq!(i_data.vx, Some(0x2));
+    assert_eq!(i_data.vy, Some(0x3));
 }

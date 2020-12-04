@@ -11,11 +11,37 @@ const RAM_SIZE: usize = 4096;
 const MSB_MASK: u8 = 0xF0;
 const LSB_MASK: u8 = 0x0F;
 
+const DEFAULT_SPRITES: [[u8; 5]; 16] = [
+    [0xF0, 0x90, 0x90, 0x90, 0xF0], // 0
+    [0x20, 0x60, 0x20, 0x20, 0x70], // 1
+    [0xF0, 0x10, 0xF0, 0x80, 0xF0], // 2
+    [0xF0, 0x10, 0xF0, 0x10, 0xF0], // 3
+    [0x90, 0x90, 0xF0, 0x10, 0x10], // 4
+    [0xF0, 0x80, 0xF0, 0x10, 0xF0], // 5
+    [0xF0, 0x80, 0xF0, 0x90, 0xF0], // 6
+    [0xF0, 0x10, 0x20, 0x40, 0x40], // 7
+    [0xF0, 0x90, 0xF0, 0x90, 0xF0], // 8
+    [0xF0, 0x90, 0xF0, 0x10, 0xF0], // 9
+    [0xF0, 0x90, 0xF0, 0x90, 0x90], // A
+    [0xE0, 0x90, 0xE0, 0x90, 0xE0], // B
+    [0xF0, 0x80, 0x80, 0x80, 0xF0], // C
+    [0xE0, 0x90, 0x90, 0x90, 0xE0], // D
+    [0xF0, 0x80, 0xF0, 0x80, 0xF0], // E
+    [0xF0, 0x80, 0xF0, 0x80, 0x80], // F
+];
+const DEFAULT_SPRITES_LOAD_ADDR: usize = 0x0;
+
 struct Registers {
     v: [u8; 16],
     i: u16,
     pc: u16,
     stack: Vec<u16>,
+}
+
+impl Registers {
+    pub fn set_carry(&mut self, carry: bool) {
+        self.v[0xF] = if carry { 1 } else { 0 };
+    }
 }
 
 #[wasm_bindgen]
@@ -29,7 +55,7 @@ pub struct ChipVM {
 
 impl ChipVM {
     pub fn new_vm() -> ChipVM {
-        ChipVM {
+        let mut vm = ChipVM {
             video_mem: FixedBitSet::with_capacity(DISPLAY_HEIGHT * DISPLAY_WIDTH),
             io_reg: 0,
             io_flag: false,
@@ -42,7 +68,11 @@ impl ChipVM {
                 pc: 0,
                 stack: vec![],
             },
-        }
+        };
+
+        vm.load_default_sprites();
+
+        vm
     }
 
     pub fn read_keypress(&mut self) -> Option<u8> {
@@ -185,7 +215,7 @@ impl ChipVM {
             let vy = i.vy.unwrap();
             let (res, carry) = self.regs.v[vx as usize].overflowing_add(self.regs.v[vy as usize]);
             self.regs.v[vx as usize] = res;
-            self.regs.v[0xF] = if carry { 1 } else { 0 };
+            self.regs.set_carry(carry);
             Ok(false)
         } else {
             Err(ExecError::MissingInstructionData)
@@ -232,7 +262,7 @@ impl ChipVM {
             let vx_val = self.regs.v[vx as usize];
             let vy_val = self.regs.v[vy as usize];
             let (res, _) = vx_val.overflowing_sub(vy_val);
-            self.regs.v[0xF] = if vx_val >= vy_val { 1 } else { 0 };
+            self.regs.set_carry(vx_val >= vy_val);
             self.regs.v[vx as usize] = res;
             Ok(false)
         } else {
@@ -245,7 +275,7 @@ impl ChipVM {
             let vx = i.vx.unwrap();
             let vx_val = self.regs.v[vx as usize];
             self.regs.v[vx as usize] = vx_val >> 1;
-            self.regs.v[0xF] = if vx_val.trailing_ones() > 0 { 1 } else { 0 };
+            self.regs.set_carry(vx_val.trailing_ones() > 0);
             Ok(false)
         } else {
             Err(ExecError::MissingInstructionData)
@@ -259,7 +289,7 @@ impl ChipVM {
             let vx_val = self.regs.v[vx as usize];
             let vy_val = self.regs.v[vy as usize];
             let (res, _) = vy_val.overflowing_sub(vx_val);
-            self.regs.v[0xF] = if vy_val >= vx_val { 1 } else { 0 };
+            self.regs.set_carry(vy_val >= vx_val);
             self.regs.v[vx as usize] = res;
             Ok(false)
         } else {
@@ -272,7 +302,7 @@ impl ChipVM {
             let vx = i.vx.unwrap();
             let vx_val = self.regs.v[vx as usize];
             self.regs.v[vx as usize] = vx_val << 1;
-            self.regs.v[0xF] = if vx_val.leading_ones() > 0 { 1 } else { 0 };
+            self.regs.set_carry(vx_val.leading_ones() > 0);
             Ok(false)
         } else {
             Err(ExecError::MissingInstructionData)
@@ -289,11 +319,52 @@ impl ChipVM {
             _ => Err(ExecError::MissingInstructionData),
         }
     }
+
+    fn exec_drw(&mut self, i: Instruction) -> ExecResult {
+        match (i.vx, i.vy, i.nibble) {
+            (Some(vx), Some(vy), Some(nibble)) => {
+                self.regs.set_carry(false);
+                let width = self.get_display_width();
+
+                let sprite_base_addr = self.regs.i as usize;
+                let pixel_base_addr = (vy as usize) * width + (vx as usize);
+
+                for row_offset in 0..(nibble as usize) {
+                    for col_offset in 0..8usize {
+                        let pixel_addr = pixel_base_addr + row_offset * width + col_offset;
+                        let current = self.video_mem.contains(pixel_addr);
+
+                        let sprite_row = self.ram[sprite_base_addr + row_offset].reverse_bits();
+                        let mask: u8 = 0x1 << col_offset;
+                        let new = (sprite_row & mask) == mask;
+
+                        self.video_mem.set(pixel_addr, current ^ new);
+
+                        let erased = current && (!self.video_mem.contains(pixel_addr));
+                        if erased {
+                            self.regs.set_carry(erased);
+                        }
+                    }
+                }
+                Ok(false)
+            }
+            _ => Err(ExecError::MissingInstructionData),
+        }
+    }
 }
 
 impl ChipVM {
     fn increment_pc(&mut self) {
         self.regs.pc += 2;
+    }
+
+    fn load_default_sprites(&mut self) {
+        for (offset, sprite_arr) in DEFAULT_SPRITES.iter().enumerate() {
+            let base_addr = DEFAULT_SPRITES_LOAD_ADDR + offset * sprite_arr.len();
+            for (byte_offset, sprite_byte) in sprite_arr.clone().iter().enumerate() {
+                self.ram[base_addr + byte_offset] = *sprite_byte;
+            }
+        }
     }
 
     fn exec_instruction(&mut self, ins: Instruction) -> ExecResult {
@@ -315,6 +386,7 @@ impl ChipVM {
             I::SUBN => self.exec_subn(ins),
             I::SHL => self.exec_shl(ins),
             I::RND => self.exec_rnd(ins),
+            I::DRW => self.exec_drw(ins),
 
             _ => Err(ExecError::UnknownError),
         }
@@ -422,6 +494,11 @@ impl Instruction {
         self
     }
 
+    pub fn set_nibble(mut self, nibble: u8) -> Self {
+        self.nibble = Some(nibble);
+        self
+    }
+
     pub fn from_bytes(b1: u8, b2: u8) -> Result<Instruction, String> {
         let b1_msb = (b1 & MSB_MASK) >> 4;
         let b1_lsb = b1 & LSB_MASK;
@@ -470,8 +547,28 @@ impl Instruction {
             (0xC, vx, k1, k2) => Ok(Instruction::with_defaults(I::RND)
                 .set_vx(vx)
                 .set_byte(byte_from_k(k1, k2))),
+            (0xD, vx, vy, nibble) => Ok(Instruction::with_defaults(I::DRW)
+                .set_vx(vx)
+                .set_vy(vy)
+                .set_nibble(nibble)),
 
             _ => Err("Unknown instruction".to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_vm_utils {
+    use super::*;
+
+    #[test]
+    fn test_load_default_sprites() {
+        let vm = ChipVM::new_vm();
+
+        for (offset, sprite_arr) in DEFAULT_SPRITES.iter().enumerate() {
+            let start_addr = DEFAULT_SPRITES_LOAD_ADDR + (offset * sprite_arr.len());
+            let actual_sprite_arr = &vm.ram[start_addr..(start_addr + sprite_arr.len())];
+            assert_eq!(sprite_arr, actual_sprite_arr)
         }
     }
 }
@@ -494,6 +591,25 @@ mod tests {
 
     fn assert_no_carry(vm: &ChipVM) {
         assert_eq!(0, vm.regs.v[0xF]);
+    }
+
+    fn assert_sprite_on_screen(vm: &ChipVM, sprite_row: usize, sprite_col: usize, sprite: &[u8]) {
+        let mut actual_pixels: Vec<u8> = vec![];
+        let base_pixel_addr = sprite_row * vm.get_display_width() + sprite_col;
+        for row_offset in 0..sprite.len() {
+            let mut actual_sprite_row = 0u8;
+            for col_offset in 0..8 {
+                let pixel_add = base_pixel_addr + row_offset * vm.get_display_width() + col_offset;
+                actual_sprite_row += (if vm.video_mem.contains(pixel_add) {
+                    1
+                } else {
+                    0
+                }) << col_offset;
+            }
+            actual_pixels.push(actual_sprite_row.reverse_bits());
+        }
+
+        assert_eq!(sprite, actual_pixels.as_slice());
     }
 
     #[test]
@@ -1240,5 +1356,53 @@ mod tests {
         assert_no_skip_pc_increment(res);
         assert_eq!(prev_pc, vm.regs.pc);
         assert_eq!(byte & 0x42, vm.regs.v[vx as usize]); // random() test functions always returns 0x42
+    }
+
+    #[test]
+    fn test_exec_instruction_drw_no_pixels_erased() {
+        let i = Instruction::with_defaults(I::DRW)
+            .set_vx(0x0)
+            .set_vy(0x0)
+            .set_nibble(0x5);
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.i = DEFAULT_SPRITES_LOAD_ADDR as u16;
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_no_carry(&vm);
+        assert_sprite_on_screen(
+            &vm,
+            0,
+            0,
+            &vm.ram[DEFAULT_SPRITES_LOAD_ADDR..(DEFAULT_SPRITES_LOAD_ADDR + 5)],
+        );
+    }
+
+    #[test]
+    fn test_exec_instruction_drw_all_pixels_erased() {
+        let draw_zero = Instruction::with_defaults(I::DRW)
+            .set_vx(0x0)
+            .set_vy(0x0)
+            .set_nibble(0x5);
+
+        let erase_zero = Instruction::with_defaults(I::DRW)
+            .set_vx(0x0)
+            .set_vy(0x0)
+            .set_nibble(0x5);
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.i = DEFAULT_SPRITES_LOAD_ADDR as u16;
+
+        let res = vm.exec_instruction(draw_zero);
+        assert!(res.is_ok());
+        assert_no_carry(&vm);
+
+        let res = vm.exec_instruction(erase_zero);
+        assert!(res.is_ok());
+        assert_sprite_on_screen(&vm, 0x0, 0x0, &[0; 5]);
+        assert_carry(&vm);
     }
 }

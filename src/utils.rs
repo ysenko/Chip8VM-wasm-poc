@@ -20,3 +20,13 @@ pub fn set_panic_hook() {
 pub fn generate_random_u8() -> u8 {
     (((random() * 1000000.0) as u32) % 255) as u8
 }
+
+#[cfg(test)]
+mod tests {
+    use super::generate_random_u8;
+
+    #[test]
+    fn test_generate_random_u8() {
+        assert_eq!(0x42, generate_random_u8());
+    }
+}
