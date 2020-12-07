@@ -36,6 +36,8 @@ struct Registers {
     i: u16,
     pc: u16,
     stack: Vec<u16>,
+    io: FixedBitSet,
+    dt: u8,
 }
 
 impl Registers {
@@ -47,8 +49,6 @@ impl Registers {
 #[wasm_bindgen]
 pub struct ChipVM {
     video_mem: FixedBitSet,
-    io_reg: u8,
-    io_flag: bool,
     ram: [u8; 4096],
     regs: Registers,
 }
@@ -57,8 +57,6 @@ impl ChipVM {
     pub fn new_vm() -> ChipVM {
         let mut vm = ChipVM {
             video_mem: FixedBitSet::with_capacity(DISPLAY_HEIGHT * DISPLAY_WIDTH),
-            io_reg: 0,
-            io_flag: false,
 
             ram: [0; RAM_SIZE],
 
@@ -67,6 +65,8 @@ impl ChipVM {
                 i: 0,
                 pc: 0,
                 stack: vec![],
+                io: FixedBitSet::with_capacity(16),
+                dt: 0,
             },
         };
 
@@ -75,16 +75,8 @@ impl ChipVM {
         vm
     }
 
-    pub fn read_keypress(&mut self) -> Option<u8> {
-        if self.io_flag {
-            Some(self.io_reg)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_display_buffer(&self) -> FixedBitSet {
-        self.video_mem.clone()
+    pub fn is_key_pressed(&self, key_code: u8) -> bool {
+        self.regs.io.contains(key_code as usize)
     }
 }
 
@@ -356,6 +348,65 @@ impl ChipVM {
             _ => Err(ExecError::MissingInstructionData),
         }
     }
+
+    fn exec_skp(&mut self, i: Instruction) -> ExecResult {
+        match i.vx {
+            Some(vx) => {
+                let vx_val = self.regs.v[vx as usize];
+                if self.is_key_pressed(vx_val) {
+                    self.increment_pc(Some(2));
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            },
+            _ => Err(ExecError::MissingInstructionData),
+        }
+    }
+
+    fn exec_sknp(&mut self, i: Instruction) -> ExecResult {
+        match i.vx {
+            Some(vx) => {
+                let vx_val = self.regs.v[vx as usize];
+                if !self.is_key_pressed(vx_val) {
+                    self.increment_pc(Some(2));
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            },
+            _ => Err(ExecError::MissingInstructionData),
+        }
+    }
+
+    fn exec_lddt(&mut self, i: Instruction) -> ExecResult {
+        match (i.vx, i.vy) {
+            (Some(vx), None) => {
+                self.regs.v[vx as usize] = self.regs.dt;
+                Ok(false)
+            },
+            (None, Some(vy)) => {
+                self.regs.dt = self.regs.v[vy as usize];
+                Ok(false)
+            },
+            _ => Err(ExecError::MissingInstructionData),
+        }
+    }
+
+    fn exec_ldkey(&mut self, i: Instruction) -> ExecResult {
+        match i.vx {
+            Some(vx) => {
+                match self.get_pressed_keys().first() {
+                    Some(keycode) => {
+                        self.regs.v[vx as usize] = *keycode;
+                        Ok(false)
+                    },
+                    _ => Ok(true)
+                }
+            },
+            _ => Err(ExecError::MissingInstructionData)
+        }
+    }
 }
 
 impl ChipVM {
@@ -393,9 +444,17 @@ impl ChipVM {
             I::SHL => self.exec_shl(ins),
             I::RND => self.exec_rnd(ins),
             I::DRW => self.exec_drw(ins),
+            I::SKP => self.exec_skp(ins),
+            I::SKNP => self.exec_sknp(ins),
+            I::LDDT => self.exec_lddt(ins),
+            I::LDKey => self.exec_ldkey(ins),
 
             _ => Err(ExecError::UnknownError),
         }
+    }
+
+    fn get_pressed_keys(&self) -> Vec<u8> {
+        self.regs.io.ones().map(|keycode| keycode as u8).collect()
     }
 }
 
@@ -413,9 +472,12 @@ impl ChipVM {
         self.video_mem.as_slice().as_ptr()
     }
 
-    pub fn store_keypress(&mut self, keycode: u8) {
-        self.io_reg = keycode;
-        self.io_flag = true;
+    pub fn key_pressed(&mut self, keycode: u8) {
+        self.regs.io.set(keycode as usize, true);
+    }
+
+    pub fn key_released(&mut self, keycode: u8) {
+        self.regs.io.set(keycode as usize, false);
     }
 
     pub fn get_display_width(&self) -> usize {
@@ -461,7 +523,9 @@ pub enum I {
     RND,
     DRW,
     SKP,
-    SKPN,
+    SKNP,
+    LDDT,
+    LDKey,
 }
 
 fn addr_from_n(n1: u8, n2: u8, n3: u8) -> u16 {
@@ -570,6 +634,11 @@ impl Instruction {
                 .set_vx(vx)
                 .set_vy(vy)
                 .set_nibble(nibble)),
+            (0xE, vx, 9, 0xE) => Ok(Instruction::with_defaults(I::SKP).set_vx(vx)),
+            (0xE, vx, 0xA, 0x1) => Ok(Instruction::with_defaults(I::SKNP).set_vx(vx)),
+            (0xF, vx, 0x0, 0x7) => Ok(Instruction::with_defaults(I::LDDT).set_vx(vx)),
+            (0xF, vx, 0x0, 0xA) => Ok(Instruction::with_defaults(I::LDKey).set_vx(vx)),
+            (0xF, vy, 0x1, 0x5) => Ok(Instruction::with_defaults(I::LDDT).set_vy(vy)),
 
             _ => Err("Unknown instruction".to_string()),
         }
@@ -606,6 +675,15 @@ mod test_vm_utils {
             expected_data.as_slice(),
             &vm.ram[target_addr..(target_addr + expected_data.len())]
         );
+    }
+
+    #[test]
+    fn test_get_all_pressed_keys() {
+        let mut vm = ChipVM::new_vm();
+        vm.key_pressed(0xF);
+        vm.key_pressed(0x0);
+
+        assert_eq!(vec![0x0, 0xF], vm.get_pressed_keys());
     }
 }
 
@@ -1470,7 +1548,6 @@ mod tests {
 
         let live_pixels = vm.video_mem.ones().collect::<Vec<usize>>();
         assert_eq!(40, live_pixels.len());
-        println!("Live pixels: {:?}", live_pixels);
 
         // Check right bottom corner
         assert_sprite_on_screen(&vm, 61, 120, &[0x0F, 0x0F, 0x0F]);
@@ -1483,5 +1560,199 @@ mod tests {
 
         // Check left upper corner
         assert_sprite_on_screen(&vm, 0, 0, &[0xF0, 0xF0, 0x00]);
+    }
+
+    #[test]
+    fn test_exec_instruction_skp_vx_skip() {
+        let vx = 0x2;
+        let vx_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+        vm.key_pressed(vx_val);
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SKP).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(prev_pc + 4, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_skp_vx_no_skip_on_different_values() {
+        let vx = 0x2;
+        let vx_val = 0xA;
+        let keypress = 0xB;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+        vm.key_pressed(keypress);
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SKP).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_skp_vx_no_skip_when_no_keypress() {
+        let vx = 0x2;
+        let vx_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SKP).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_sknp_vx_no_skip_on_same_vvalue() {
+        let vx = 0x2;
+        let vx_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+        vm.key_pressed(vx_val);
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SKNP).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+        assert_eq!(prev_pc, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_sknp_vx_skip_on_different_values() {
+        let vx = 0x2;
+        let vx_val = 0xA;
+        let keypress = 0xB;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+        vm.key_pressed(keypress);
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SKNP).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(prev_pc + 4, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_sknp_vx_skip_when_no_keypress() {
+        let vx = 0x2;
+        let vx_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+        let prev_pc = vm.regs.pc;
+
+        let i = Instruction::with_defaults(I::SKNP).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_skip_pc_incr(res);
+        assert_eq!(prev_pc + 4, vm.regs.pc);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_vx_dt() {
+        let vx = 0x02;
+        let dt_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.dt = dt_val;
+
+        let i = Instruction::with_defaults(I::LDDT).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        assert_eq!(vm.regs.dt, vm.regs.v[vx as usize]);
+        assert_eq!(dt_val, vm.regs.v[vx as usize]);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_vx_key_with_key_pressed() {
+        let vx = 0x02;
+        let key_code = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.key_pressed(key_code);
+
+        let i = Instruction::with_defaults(I::LDKey).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        assert_eq!(key_code, vm.regs.v[vx as usize]);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_vx_key_wait_for_keypress() {
+        let vx = 0x02;
+        let key_code = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+
+        let i1 = Instruction::with_defaults(I::LDKey).set_vx(vx);
+        let i2 = Instruction::with_defaults(I::LDKey).set_vx(vx);
+
+        let res1 = vm.exec_instruction(i1);
+
+        assert!(res1.is_ok());
+        assert_skip_pc_incr(res1);
+        assert_eq!(0x0, vm.regs.v[vx as usize]);
+
+        vm.key_pressed(key_code);
+
+        let res2 = vm.exec_instruction(i2);
+        assert!(res2.is_ok());
+        assert_eq!(key_code, vm.regs.v[vx as usize]);
+        assert_no_skip_pc_increment(res2)
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_dt_vy() {
+        let vy = 0x02;
+        let vy_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vy as usize] = vy_val;
+
+        let i = Instruction::with_defaults(I::LDDT).set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        assert_eq!(vm.regs.dt, vm.regs.v[vy as usize]);
+        assert_eq!(vy_val, vm.regs.dt);
     }
 }

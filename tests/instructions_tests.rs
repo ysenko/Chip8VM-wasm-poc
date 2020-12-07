@@ -421,3 +421,93 @@ fn test_parse_drw_vx_vy_nibble() {
     assert_eq!(i_data.vx, Some(0x2));
     assert_eq!(i_data.vy, Some(0x3));
 }
+
+#[test]
+fn test_parse_skp_vx() {
+    let (b1, b2) = get_ins_bytes(0xE29E);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::SKP);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_sknp_vx() {
+    let (b1, b2) = get_ins_bytes(0xE2A1);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::SKNP);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_ld_vx_dt() {
+    let (b1, b2) = get_ins_bytes(0xF207);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDDT);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_ld_key() {
+    let (b1, b2) = get_ins_bytes(0xF20A);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDKey);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_ld_dt_vy() {
+    let (b1, b2) = get_ins_bytes(0xF215);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDDT);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vy, Some(0x2));
+    assert!(i_data.vx.is_none());
+}

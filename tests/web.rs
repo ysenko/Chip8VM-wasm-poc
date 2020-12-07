@@ -28,3 +28,25 @@ fn test_load_data_into_ram() {
         vm.load_bytes(data, target_addr)
     );
 }
+
+#[wasm_bindgen_test]
+fn test_keypress_and_release() {
+    let mut vm = new_vm();
+
+    vm.key_pressed(0xA);
+    vm.key_pressed(0xB);
+    vm.key_pressed(0x0);
+
+    assert!(vm.is_key_pressed(0xA));
+    assert!(vm.is_key_pressed(0xB));
+    assert!(vm.is_key_pressed(0x0));
+
+    vm.key_released(0xA);
+    assert!(!vm.is_key_pressed(0xA));
+
+    vm.key_released(0xB);
+    assert!(!vm.is_key_pressed(0xB));
+
+    vm.key_released(0x0);
+    assert!(!vm.is_key_pressed(0x0));
+}

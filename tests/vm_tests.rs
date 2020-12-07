@@ -4,12 +4,18 @@ use chip8_wasm::new_vm;
 fn test_read_stored_keypress() {
     let mut vm = new_vm();
 
-    vm.store_keypress(1);
-    assert_eq!(1, vm.read_keypress().unwrap())
+    vm.key_pressed(0xA);
+    assert!(vm.is_key_pressed(0xA))
 }
 
 #[test]
 fn test_read_unset_keypress_returns_none() {
     let mut vm = new_vm();
-    assert!(vm.read_keypress().is_none());
+
+    vm.key_pressed(0x1);
+    vm.key_pressed(0x2);
+    vm.key_released(0x1);
+
+    assert!(!vm.is_key_pressed(0x1));
+    assert!(vm.is_key_pressed(0x2));
 }
