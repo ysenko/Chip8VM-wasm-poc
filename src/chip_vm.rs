@@ -31,6 +31,8 @@ const DEFAULT_SPRITES: [[u8; 5]; 16] = [
 ];
 const DEFAULT_SPRITES_LOAD_ADDR: usize = 0x0;
 
+const DEFAULT_ROM_LOAD_ADDR: usize = 0x200;
+
 struct Registers {
     v: [u8; 16],
     i: u16,
@@ -511,19 +513,47 @@ impl ChipVM {
         }
     }
 
+    fn read_instruction(&self) -> Instruction {
+        match Instruction::from_bytes(
+            self.ram[self.regs.pc as usize],
+            self.ram[(self.regs.pc + 1) as usize],
+        ) {
+            Ok(i) => i,
+            _ => panic!("Cannot parse instruction at {:X}", self.regs.pc),
+        }
+    }
+
     fn get_pressed_keys(&self) -> Vec<u8> {
         self.regs.io.ones().map(|keycode| keycode as u8).collect()
+    }
+
+    fn load_bytes(&mut self, bytes: Vec<u8>, base_addr: u16) -> u16 {
+        let mut written = 0;
+        for (offset, byte) in bytes.into_iter().enumerate() {
+            let target_addr = base_addr as usize + offset;
+            if target_addr >= self.ram.len() {
+                panic!("Out of memory");
+            }
+            self.ram[target_addr] = byte;
+            written += 1;
+        }
+        written
     }
 }
 
 #[wasm_bindgen]
 impl ChipVM {
     pub fn tick(&mut self) {
-        // let ins = self.read_instruction().unwrap();
-        // let jmp_flag = self.exec_instruction(ins).unwrap();
-        // if !jmp_flag {
-        //     self.increment_pc();
-        // }
+        let ins = self.read_instruction();
+        match self.exec_instruction(ins) {
+            Ok(do_not_increment_pc) => {
+                if do_not_increment_pc {
+                    return;
+                }
+                self.increment_pc(Some(1));
+            }
+            Err(e) => panic!(e),
+        }
     }
 
     pub fn video_port(&self) -> *const u32 {
@@ -546,17 +576,14 @@ impl ChipVM {
         DISPLAY_HEIGHT
     }
 
-    pub fn load_bytes(&mut self, bytes: Vec<u8>, base_addr: u16) -> u16 {
-        let mut written = 0;
-        for (offset, byte) in bytes.into_iter().enumerate() {
-            let target_addr = base_addr as usize + offset;
-            if target_addr >= self.ram.len() {
-                panic!("Out of memory");
-            }
-            self.ram[target_addr] = byte;
-            written += 1;
-        }
-        written
+    pub fn load_rom(&mut self, rom: Vec<u16>) -> u16 {
+        self.regs.pc = DEFAULT_ROM_LOAD_ADDR as u16;
+        let bytes = rom
+            .into_iter()
+            .map(|el| el.to_be_bytes().to_vec())
+            .flatten()
+            .collect::<Vec<u8>>();
+        self.load_bytes(bytes, DEFAULT_ROM_LOAD_ADDR as u16)
     }
 }
 
@@ -717,6 +744,25 @@ impl Instruction {
 mod test_vm_utils {
     use super::*;
 
+    fn assert_sprite_on_screen(vm: &ChipVM, sprite_row: usize, sprite_col: usize, sprite: &[u8]) {
+        let mut actual_pixels: Vec<u8> = vec![];
+        let base_pixel_addr = sprite_row * vm.get_display_width() + sprite_col;
+        for row_offset in 0..sprite.len() {
+            let mut actual_sprite_row = 0u8;
+            for col_offset in 0..8 {
+                let pixel_add = base_pixel_addr + row_offset * vm.get_display_width() + col_offset;
+                actual_sprite_row += (if vm.video_mem.contains(pixel_add) {
+                    1
+                } else {
+                    0
+                }) << col_offset;
+            }
+            actual_pixels.push(actual_sprite_row.reverse_bits());
+        }
+
+        assert_eq!(sprite, actual_pixels.as_slice());
+    }
+
     #[test]
     fn test_load_default_sprites() {
         let vm = ChipVM::new_vm();
@@ -752,6 +798,33 @@ mod test_vm_utils {
         vm.key_pressed(0x0);
 
         assert_eq!(vec![0x0, 0xF], vm.get_pressed_keys());
+    }
+
+    #[test]
+    fn test_load_and_run_rom() {
+        let rom: Vec<u16> = vec![
+            0x6002, // Load 2 in V0
+            0x7002, // Add 2 to V0
+            0xF029, // Load location of sprite 4 into I
+            0xDAA5, // Draw 4 on 0xA 0xA coordinates
+        ];
+        let ticks_needed = rom.len();
+
+        let mut vm = ChipVM::new_vm();
+
+        vm.load_rom(rom);
+
+        vm.tick();
+        assert_eq!(0x2, vm.regs.v[0x0]);
+
+        vm.tick();
+        assert_eq!(0x4, vm.regs.v[0x0]);
+
+        vm.tick();
+        assert_eq!(vm.regs.i as usize, (DEFAULT_SPRITES_LOAD_ADDR + 5 * 4));
+
+        vm.tick();
+        assert_sprite_on_screen(&vm, 0xA, 0xA, &DEFAULT_SPRITES[4]);
     }
 }
 

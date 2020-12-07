@@ -55,6 +55,8 @@ const runForever = () => {
     drawFrame();
 };
 
+vm.load_rom(new Uint8Array([0x6002, 0x7002, 0xF029, 0xDAA5]));
+
 window.onload = (_evt) => {
     initDisplay();
     runForever();
