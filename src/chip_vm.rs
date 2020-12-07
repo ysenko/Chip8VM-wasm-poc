@@ -38,6 +38,7 @@ struct Registers {
     stack: Vec<u16>,
     io: FixedBitSet,
     dt: u8,
+    st: u8,
 }
 
 impl Registers {
@@ -67,6 +68,7 @@ impl ChipVM {
                 stack: vec![],
                 io: FixedBitSet::with_capacity(16),
                 dt: 0,
+                st: 0,
             },
         };
 
@@ -206,6 +208,9 @@ impl ChipVM {
             self.regs.v[vx as usize] = res;
             self.regs.set_carry(carry);
             Ok(false)
+        } else if i.vx.is_some() {
+            self.regs.i += self.regs.v[i.vx.unwrap() as usize] as u16;
+            Ok(false)
         } else {
             Err(ExecError::MissingInstructionData)
         }
@@ -327,7 +332,7 @@ impl ChipVM {
                             base_row + row_offset,
                             base_col + col_offset,
                             width,
-                            height
+                            height,
                         );
                         let current = self.video_mem.contains(pixel_addr);
 
@@ -359,7 +364,7 @@ impl ChipVM {
                 } else {
                     Ok(false)
                 }
-            },
+            }
             _ => Err(ExecError::MissingInstructionData),
         }
     }
@@ -374,7 +379,7 @@ impl ChipVM {
                 } else {
                     Ok(false)
                 }
-            },
+            }
             _ => Err(ExecError::MissingInstructionData),
         }
     }
@@ -384,27 +389,76 @@ impl ChipVM {
             (Some(vx), None) => {
                 self.regs.v[vx as usize] = self.regs.dt;
                 Ok(false)
-            },
+            }
             (None, Some(vy)) => {
                 self.regs.dt = self.regs.v[vy as usize];
                 Ok(false)
-            },
+            }
             _ => Err(ExecError::MissingInstructionData),
         }
     }
 
     fn exec_ldkey(&mut self, i: Instruction) -> ExecResult {
         match i.vx {
-            Some(vx) => {
-                match self.get_pressed_keys().first() {
-                    Some(keycode) => {
-                        self.regs.v[vx as usize] = *keycode;
-                        Ok(false)
-                    },
-                    _ => Ok(true)
+            Some(vx) => match self.get_pressed_keys().first() {
+                Some(keycode) => {
+                    self.regs.v[vx as usize] = *keycode;
+                    Ok(false)
                 }
+                _ => Ok(true),
             },
-            _ => Err(ExecError::MissingInstructionData)
+            _ => Err(ExecError::MissingInstructionData),
+        }
+    }
+
+    fn exec_ldst(&mut self, i: Instruction) -> ExecResult {
+        if i.vy.is_some() {
+            self.regs.st = self.regs.v[i.vy.unwrap() as usize];
+            Ok(false)
+        } else {
+            Err(ExecError::MissingInstructionData)
+        }
+    }
+
+    fn exec_ldsprite(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_none() {
+            return Err(ExecError::MissingInstructionData);
+        };
+        let vx_val = self.regs.v[i.vx.unwrap() as usize];
+        self.regs.i =
+            DEFAULT_SPRITES_LOAD_ADDR as u16 + (vx_val as u16 * DEFAULT_SPRITES[0].len() as u16);
+        Ok(false)
+    }
+
+    fn exec_ldbcd(&mut self, i: Instruction) -> ExecResult {
+        if i.vx.is_none() {
+            return Err(ExecError::MissingInstructionData);
+        };
+        let mut vx_val = self.regs.v[i.vx.unwrap() as usize];
+        for offset in 0..3usize {
+            let divider = 100u8 / 10u8.pow(offset as u32);
+            self.ram[self.regs.i as usize + offset] = vx_val / divider;
+            vx_val = vx_val % divider;
+        }
+        Ok(false)
+    }
+
+    fn exec_ldregs(&mut self, i: Instruction) -> ExecResult {
+        match (i.vx, i.vy) {
+            (Some(vx), None) => {
+                for offset in 0..((vx as usize) + 1) {
+                    self.ram[self.regs.i as usize + offset] = self.regs.v[offset];
+                }
+                Ok(false)
+            }
+            (None, Some(vy)) => {
+                let base_addr = self.regs.i as usize;
+                for offset in 0..((vy as usize) + 1) {
+                    self.regs.v[offset] = self.ram[base_addr + offset];
+                }
+                Ok(false)
+            }
+            _ => Err(ExecError::MissingInstructionData),
         }
     }
 }
@@ -448,6 +502,10 @@ impl ChipVM {
             I::SKNP => self.exec_sknp(ins),
             I::LDDT => self.exec_lddt(ins),
             I::LDKey => self.exec_ldkey(ins),
+            I::LDST => self.exec_ldst(ins),
+            I::LDSprite => self.exec_ldsprite(ins),
+            I::LDBCD => self.exec_ldbcd(ins),
+            I::LDRegs => self.exec_ldregs(ins),
 
             _ => Err(ExecError::UnknownError),
         }
@@ -526,6 +584,10 @@ pub enum I {
     SKNP,
     LDDT,
     LDKey,
+    LDST,
+    LDSprite,
+    LDBCD,
+    LDRegs,
 }
 
 fn addr_from_n(n1: u8, n2: u8, n3: u8) -> u16 {
@@ -639,6 +701,12 @@ impl Instruction {
             (0xF, vx, 0x0, 0x7) => Ok(Instruction::with_defaults(I::LDDT).set_vx(vx)),
             (0xF, vx, 0x0, 0xA) => Ok(Instruction::with_defaults(I::LDKey).set_vx(vx)),
             (0xF, vy, 0x1, 0x5) => Ok(Instruction::with_defaults(I::LDDT).set_vy(vy)),
+            (0xF, vy, 0x1, 0x8) => Ok(Instruction::with_defaults(I::LDST).set_vy(vy)),
+            (0xF, vx, 0x1, 0xE) => Ok(Instruction::with_defaults(I::ADD).set_vx(vx)),
+            (0xF, vx, 0x2, 0x9) => Ok(Instruction::with_defaults(I::LDSprite).set_vx(vx)),
+            (0xF, vx, 0x3, 0x3) => Ok(Instruction::with_defaults(I::LDBCD).set_vx(vx)),
+            (0xF, vx, 0x5, 0x5) => Ok(Instruction::with_defaults(I::LDRegs).set_vx(vx)),
+            (0xF, vy, 0x6, 0x5) => Ok(Instruction::with_defaults(I::LDRegs).set_vy(vy)),
 
             _ => Err("Unknown instruction".to_string()),
         }
@@ -1754,5 +1822,137 @@ mod tests {
 
         assert_eq!(vm.regs.dt, vm.regs.v[vy as usize]);
         assert_eq!(vy_val, vm.regs.dt);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_st_vy() {
+        let vy = 0x02;
+        let vy_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vy as usize] = vy_val;
+
+        let i = Instruction::with_defaults(I::LDST).set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        assert_eq!(vm.regs.st, vm.regs.v[vy as usize]);
+        assert_eq!(vy_val, vm.regs.st);
+    }
+
+    #[test]
+    fn test_exec_instruction_add_i_vx() {
+        let vx = 0x02;
+        let vx_val = 0xA;
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+
+        let expected_i_val = vm.regs.i + (vx_val as u16);
+
+        let i = Instruction::with_defaults(I::ADD).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        assert_eq!(vm.regs.i, expected_i_val);
+        assert_eq!(vx_val, vm.regs.v[vx as usize]);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_sprite() {
+        let vx = 0x02;
+        let vx_val = 0xAu8;
+
+        let expected_i_val = DEFAULT_SPRITES_LOAD_ADDR + (vx_val as usize) * 5;
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+
+        let i = Instruction::with_defaults(I::LDSprite).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        assert_eq!(vx_val, vm.regs.v[vx as usize]);
+        assert_eq!(vm.regs.i, expected_i_val as u16);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_bcd() {
+        let vx = 0x02;
+        let vx_val = 254;
+        let base_addr = 0x100usize;
+
+        let expected: &[u8] = &[2, 5, 4];
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[vx as usize] = vx_val;
+        vm.regs.i = base_addr as u16;
+
+        let i = Instruction::with_defaults(I::LDBCD).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        let actual = &vm.ram[base_addr..base_addr + 3];
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_regs_to_mem() {
+        let vx = 0x02;
+        let base_addr = 0x100usize;
+
+        let expected: &[u8] = &[0xF, 4, 2];
+
+        let mut vm = ChipVM::new_vm();
+        vm.regs.v[0x0] = 0xF;
+        vm.regs.v[0x1] = 0x4;
+        vm.regs.v[0x2] = 0x2;
+        vm.regs.i = base_addr as u16;
+
+        let i = Instruction::with_defaults(I::LDRegs).set_vx(vx);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        let actual = &vm.ram[base_addr..base_addr + 3];
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_exec_instruction_ld_mem_to_regs() {
+        let vy = 0x02;
+        let base_addr = 0x100usize;
+
+        let expected: &[u8] = &[0xF, 4, 2];
+
+        let mut vm = ChipVM::new_vm();
+        for offset in 0..3 {
+            vm.ram[base_addr + offset] = expected[offset];
+        }
+        vm.regs.i = base_addr as u16;
+
+        let i = Instruction::with_defaults(I::LDRegs).set_vy(vy);
+
+        let res = vm.exec_instruction(i);
+
+        assert!(res.is_ok());
+        assert_no_skip_pc_increment(res);
+
+        for offset in 0..3 {
+            assert_eq!(vm.regs.v[offset], expected[offset])
+        }
     }
 }

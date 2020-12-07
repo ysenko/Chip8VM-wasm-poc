@@ -23,10 +23,7 @@ fn test_load_data_into_ram() {
 
     let mut vm = new_vm();
 
-    assert_eq!(
-        data.len() as u16,
-        vm.load_bytes(data, target_addr)
-    );
+    assert_eq!(data.len() as u16, vm.load_bytes(data, target_addr));
 }
 
 #[wasm_bindgen_test]

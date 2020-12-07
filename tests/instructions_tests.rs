@@ -511,3 +511,111 @@ fn test_parse_ld_dt_vy() {
     assert_eq!(i_data.vy, Some(0x2));
     assert!(i_data.vx.is_none());
 }
+
+#[test]
+fn test_parse_ld_st_vy() {
+    let (b1, b2) = get_ins_bytes(0xF218);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDST);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vy, Some(0x2));
+    assert!(i_data.vx.is_none());
+}
+
+#[test]
+fn test_parse_add_i_vx() {
+    let (b1, b2) = get_ins_bytes(0xF21E);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::ADD);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_ld_sprite() {
+    let (b1, b2) = get_ins_bytes(0xF229);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDSprite);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_ld_bcd() {
+    let (b1, b2) = get_ins_bytes(0xF233);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDBCD);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_ld_regs_to_mem() {
+    let (b1, b2) = get_ins_bytes(0xF255);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDRegs);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vx, Some(0x2));
+    assert!(i_data.vy.is_none());
+}
+
+#[test]
+fn test_parse_ld_mem_to_regs() {
+    let (b1, b2) = get_ins_bytes(0xF265);
+
+    let i = Instruction::from_bytes(b1, b2);
+
+    assert!(i.is_ok());
+
+    let i_data = i.unwrap();
+
+    assert_eq!(i_data.i_type, I::LDRegs);
+    assert!(i_data.addr.is_none());
+    assert!(i_data.byte.is_none());
+    assert!(i_data.nibble.is_none());
+    assert_eq!(i_data.vy, Some(0x2));
+    assert!(i_data.vx.is_none());
+}
