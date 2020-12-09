@@ -1,7 +1,7 @@
 use fixedbitset::FixedBitSet;
 use wasm_bindgen::prelude::*;
 
-use super::utils::{generate_random_u8, get_pixel_idx};
+use super::utils::{generate_random_u8, get_pixel_idx, set_panic_hook};
 
 const DISPLAY_WIDTH: usize = 128;
 const DISPLAY_HEIGHT: usize = 64;
@@ -58,6 +58,8 @@ pub struct ChipVM {
 
 impl ChipVM {
     pub fn new_vm() -> ChipVM {
+        set_panic_hook();
+
         let mut vm = ChipVM {
             video_mem: FixedBitSet::with_capacity(DISPLAY_HEIGHT * DISPLAY_WIDTH),
 
@@ -92,7 +94,6 @@ enum ExecError {
     NoAddr,
     MissingInstructionData,
     EmptyStack,
-    UnknownError,
 }
 
 impl ChipVM {
@@ -508,8 +509,6 @@ impl ChipVM {
             I::LDSprite => self.exec_ldsprite(ins),
             I::LDBCD => self.exec_ldbcd(ins),
             I::LDRegs => self.exec_ldregs(ins),
-
-            _ => Err(ExecError::UnknownError),
         }
     }
 
@@ -519,7 +518,8 @@ impl ChipVM {
             self.ram[(self.regs.pc + 1) as usize],
         ) {
             Ok(i) => i,
-            _ => panic!("Cannot parse instruction at {:X}", self.regs.pc),
+            Err(msg) => panic!("Cannot parse instruction at 0X{:X}. Error: {}",
+                                      self.regs.pc, msg),
         }
     }
 
@@ -527,17 +527,17 @@ impl ChipVM {
         self.regs.io.ones().map(|keycode| keycode as u8).collect()
     }
 
-    fn load_bytes(&mut self, bytes: Vec<u8>, base_addr: u16) -> u16 {
+    fn load_bytes(&mut self, bytes: Vec<u8>, base_addr: &usize) -> usize {
         let mut written = 0;
         for (offset, byte) in bytes.into_iter().enumerate() {
-            let target_addr = base_addr as usize + offset;
+            let target_addr = base_addr + offset;
             if target_addr >= self.ram.len() {
                 panic!("Out of memory");
             }
             self.ram[target_addr] = byte;
             written += 1;
         }
-        written
+        written as usize
     }
 }
 
@@ -576,14 +576,14 @@ impl ChipVM {
         DISPLAY_HEIGHT
     }
 
-    pub fn load_rom(&mut self, rom: Vec<u16>) -> u16 {
+    pub fn load_rom(&mut self, rom: Vec<u16>) -> usize {
         self.regs.pc = DEFAULT_ROM_LOAD_ADDR as u16;
         let bytes = rom
             .into_iter()
             .map(|el| el.to_be_bytes().to_vec())
             .flatten()
             .collect::<Vec<u8>>();
-        self.load_bytes(bytes, DEFAULT_ROM_LOAD_ADDR as u16)
+        self.load_bytes(bytes, &DEFAULT_ROM_LOAD_ADDR)
     }
 }
 
@@ -735,7 +735,7 @@ impl Instruction {
             (0xF, vx, 0x5, 0x5) => Ok(Instruction::with_defaults(I::LDRegs).set_vx(vx)),
             (0xF, vy, 0x6, 0x5) => Ok(Instruction::with_defaults(I::LDRegs).set_vy(vy)),
 
-            _ => Err("Unknown instruction".to_string()),
+            _ => Err(format!("Unknown instruction 0x{:X}{:X}{:X}{:X}", b1_msb, b1_lsb, b2_msb, b2_lsb)),
         }
     }
 }
@@ -782,8 +782,8 @@ mod test_vm_utils {
 
         let mut vm = ChipVM::new_vm();
         assert_eq!(
-            expected_data.len() as u16,
-            vm.load_bytes(data, target_addr as u16)
+            expected_data.len(),
+            vm.load_bytes(data, &target_addr)
         );
         assert_eq!(
             expected_data.as_slice(),
@@ -1676,7 +1676,7 @@ mod tests {
         vm.regs.i = sprite_addr as u16;
 
         assert_eq!(
-            vm.load_bytes(vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF], sprite_addr),
+            vm.load_bytes(vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF], &sprite_addr),
             5,
             "Cannot load sprite"
         );

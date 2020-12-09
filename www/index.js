@@ -47,15 +47,22 @@ const drawFrame = () => {
         }
     }
     displayCtx.putImageData(newFrame, 0, 0);
-
-    requestAnimationFrame(drawFrame);
 };
 
 const runForever = () => {
-    drawFrame();
+    while (true) {
+        vm.tick();
+        drawFrame();
+    }
 };
 
-vm.load_rom(new Uint8Array([0x6002, 0x7002, 0xF029, 0xDAA5]));
+const rom = new Uint16Array([
+    0x6002, // Load 2 in V0
+    0x7002, // Add 2 to V0
+    0xF029, // Load location of sprite 4 into I
+    0xDAA5, // Draw 4 on 0xA 0xA coordinates
+]);
+vm.load_rom(rom);
 
 window.onload = (_evt) => {
     initDisplay();

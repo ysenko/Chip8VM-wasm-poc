@@ -18,12 +18,12 @@ fn test_get_display_size() {
 
 #[wasm_bindgen_test]
 fn test_load_data_into_ram() {
-    let data = vec![0x01, 0x02, 0x03, 0x04, 0xFF];
+    let rom = vec![0x0102, 0x0304, 0x05FF];
     let target_addr = 0x100u16;
 
     let mut vm = new_vm();
 
-    assert_eq!(data.len() as u16, vm.load_bytes(data, target_addr));
+    assert_eq!(rom.len() * 2, vm.load_rom(rom));
 }
 
 #[wasm_bindgen_test]
