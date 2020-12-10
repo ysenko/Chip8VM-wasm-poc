@@ -49,22 +49,48 @@ const drawFrame = () => {
     displayCtx.putImageData(newFrame, 0, 0);
 };
 
-const runForever = () => {
-    while (true) {
+const runForever = (_ts) => {
+    if (vm.is_rom_loaded()) {
         vm.tick();
         drawFrame();
-    }
+    };
+    window.requestAnimationFrame(runForever);
 };
 
-const rom = new Uint16Array([
-    0x6002, // Load 2 in V0
-    0x7002, // Add 2 to V0
-    0xF029, // Load location of sprite 4 into I
-    0xDAA5, // Draw 4 on 0xA 0xA coordinates
-]);
-vm.load_rom(rom);
+const fileSelector = document.getElementById("rom_selector");
+fileSelector.addEventListener("change", (evt) => {
+    const romFile = evt.target.files[0];
+    loadRom(romFile);
+});
+
+const loadRom = (file) => {
+    const reader  = new FileReader();
+    reader.addEventListener("load", (evt) => {
+        let rom = new Uint8Array(evt.target.result);
+        vm.load_rom(rom);
+        runForever();
+    });
+    reader.readAsArrayBuffer(file);
+};
+
+const toArrayBuffer = (buffer) => {
+    let arrayBuff = new ArrayBuffer(buffer.length);
+    let view = new Uint8Array(arrayBuff);
+    for (let i=0; i<buffer.length; i++) {
+        view[i] = buffer[i];
+    }
+    return arrayBuff;
+};
+
+// const rom = new Uint16Array([
+//     0x6002, // Load 2 in V0
+//     0x7002, // Add 2 to V0
+//     0xF029, // Load location of sprite 4 into I
+//     0xDAA5, // Draw 4 on 0xA 0xA coordinates
+// ]);
+// vm.load_rom(rom);
 
 window.onload = (_evt) => {
     initDisplay();
-    runForever();
+    window.requestAnimationFrame(runForever);
 };

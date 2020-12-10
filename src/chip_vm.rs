@@ -54,6 +54,7 @@ pub struct ChipVM {
     video_mem: FixedBitSet,
     ram: [u8; 4096],
     regs: Registers,
+    rom_loaded: bool,
 }
 
 impl ChipVM {
@@ -74,6 +75,8 @@ impl ChipVM {
                 dt: 0,
                 st: 0,
             },
+
+            rom_loaded: false,
         };
 
         vm.load_default_sprites();
@@ -576,14 +579,16 @@ impl ChipVM {
         DISPLAY_HEIGHT
     }
 
-    pub fn load_rom(&mut self, rom: Vec<u16>) -> usize {
+    pub fn load_rom(&mut self, rom: Vec<u8>) -> usize {
         self.regs.pc = DEFAULT_ROM_LOAD_ADDR as u16;
-        let bytes = rom
-            .into_iter()
-            .map(|el| el.to_be_bytes().to_vec())
-            .flatten()
-            .collect::<Vec<u8>>();
-        self.load_bytes(bytes, &DEFAULT_ROM_LOAD_ADDR)
+        let bytes_loaded = self.load_bytes(rom, &DEFAULT_ROM_LOAD_ADDR);
+        self.rom_loaded = true;
+
+        bytes_loaded
+    }
+
+    pub fn is_rom_loaded(&self) -> bool {
+        self.rom_loaded
     }
 }
 
@@ -802,17 +807,17 @@ mod test_vm_utils {
 
     #[test]
     fn test_load_and_run_rom() {
-        let rom: Vec<u16> = vec![
-            0x6002, // Load 2 in V0
-            0x7002, // Add 2 to V0
-            0xF029, // Load location of sprite 4 into I
-            0xDAA5, // Draw 4 on 0xA 0xA coordinates
+        let rom: Vec<u8> = vec![
+            0x60, 0x02, // Load 2 in V0
+            0x70, 0x02, // Add 2 to V0
+            0xF0, 0x29, // Load location of sprite 4 into I
+            0xDA, 0xA5, // Draw 4 on 0xA 0xA coordinates
         ];
-        let ticks_needed = rom.len();
 
         let mut vm = ChipVM::new_vm();
 
         vm.load_rom(rom);
+        assert!(vm.is_rom_loaded());
 
         vm.tick();
         assert_eq!(0x2, vm.regs.v[0x0]);
